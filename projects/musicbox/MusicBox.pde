@@ -2,34 +2,70 @@ import processing.serial.*;
 import java.lang.reflect.*;
 import java.util.*;
 
-class Delegate
+/**
+ */
+<T> Class<T> typeUnwrapPrimitive(Class<T> c)
+{
+  if (TypeWrapperToPrimitives.map.containsKey(c))
+  {
+    return (Class<T>) TypeWrapperToPrimitives.map.get(c);
+  }
+  else
+  {
+    return c;
+  }
+}
+
+/**
+ */
+public static class TypeWrapperToPrimitives
+{
+  public static final Map<Class<?>, Class<?>> map;
+  static
+  {
+    map = new HashMap<Class<?>, Class<?>>();
+    map.put(Boolean.class, Boolean.TYPE);
+    map.put(Byte.class, Byte.TYPE);
+    map.put(Character.class, Character.TYPE);
+    map.put(Double.class, Double.TYPE);
+    map.put(Float.class, Float.TYPE);
+    map.put(Integer.class, Integer.TYPE);
+    map.put(Long.class, Long.TYPE);
+    map.put(Short.class, Short.TYPE);
+    map.put(Void.class, Void.TYPE);
+  }
+}
+
+/**
+ */
+public class Delegate
 {
   public Delegate(Object obj, String methodName)
   {
-    mMethodTable = new HashMap();
+    mMethodTable = new HashMap<String, Method>();
     mObj = obj;
     mMethodName = methodName;
   }
-
+  
   public void invoke()
   {
-    methodInvoke(new Object [0]);
+    methodInvoke(new Object [] {});
   }
 
   public void invoke(Object arg0)
   {
     methodInvoke(new Object [] {arg0});
   }
+  
+  public boolean equals(Delegate other)
+  {
+    return mObj == other.mObj && mMethodName == other.mMethodName;
+  }
 
   private void methodInvoke(Object[] argv)
   {
-    Class [] types = new Class[argv.length];
-    for (int idx = 0; idx < argv.length; idx++)
-    {
-      types[idx] = argv.getClass();
-    }
-
-    Method meth = getMethod(types);
+    Class [] argTypes = objectTypes(argv);
+    Method meth = getMethod(argTypes);
 
     try
     {
@@ -40,61 +76,163 @@ class Delegate
     }
     catch (Exception e)
     {
+      println("Unable to invoke " + delegateSignatureToString(argTypes));
     }
   }
 
-  private Method getMethod(Class[] argv)
+  private Method getMethod(Class[] argTypes)
   {
-    if (mMethodTable.containsKey(argv))
+    String argHash = typesToString(argTypes);
+    
+    if (mMethodTable.containsKey(argHash))
     {
-      return (Method)mMethodTable.get(argv);
+      return mMethodTable.get(argHash);
     }
     else
     {
       Method meth = null;
-
+      
       try
       {
-        meth = mObj.getClass().getMethod(mMethodName, argv);
+        meth = mObj.getClass().getMethod(mMethodName, argTypes);
       }
       catch (Exception e)
       {
+        println(delegateSignatureToString(argTypes) + " not found");
       }
-
-      mMethodTable.put(argv, meth);
+      
+      mMethodTable.put(argHash, meth);
       return meth;
     }
   }
+  
+  private Class[] objectTypes(Object[] objects)
+  {
+    Class [] types = new Class[objects.length];
+    for (int idx = 0; idx < objects.length; idx++)
+    {
+      types[idx] = typeUnwrapPrimitive(objects[idx].getClass());
+    }
+    
+    return types;
+  }
+  
+  private String delegateSignatureToString(Class[] argTypes)
+  {
+    String s = mObj.toString() + "." + mMethodName + "(" + typesToString(argTypes) + ")";
+    return s;
+  }   
+ 
+  private String typesToString(Class[] argTypes)
+  {
+    String argv = "";
+    for (Class t: argTypes)
+    {
+      argv = argv + t.toString() + ",";
+    }
+    
+    return argv;
+  }
 
-  private HashMap mMethodTable;
+  private Map<String, Method> mMethodTable;
   private Object mObj;
   private String mMethodName;
 }
 
-class DelegateList
+/**
+ */
+public class DelegateList
 {
+  public DelegateList()
+  {
+    mListeners = new ArrayList<Delegate>();
+  }
+  
+  public void invoke()
+  {
+    Iterator<Delegate> it = mListeners.iterator();
+    while (it.hasNext())
+    {
+      it.next().invoke();
+    }
+  }
+  
+  public void invoke(Object arg)
+  {
+    Iterator<Delegate> it = mListeners.iterator();
+    while (it.hasNext())
+    {
+      it.next().invoke(arg);
+    }
+  }
+  
+  public void addListener(Object obj, String methodName)
+  {
+    Delegate d = new Delegate(obj, methodName);
+    
+    if (findListener(d) < 0)
+    {
+      mListeners.add(d);
+    }
+  }
+  
+  public void removeListener(Object obj, String methodName)
+  {
+    int listenerIdx = findListener(new Delegate(obj, methodName));
+    if (listenerIdx >= 0)
+    {
+      mListeners.remove(listenerIdx);
+    }
+  }
+  
+  private int findListener(Delegate d)
+  {
+    for (int idx = 0; idx < mListeners.size(); idx++)
+    {
+      if (mListeners.get(idx).equals(d))
+      {
+        return idx;
+      }
+    }
+    
+    return -1;
+  }
+  
+  private List<Delegate> mListeners;
 }
 
-class Encoder extends PApplet
+/**
+ * @note must be a public member of the package in order for the
+ * serialEvent() method to be invoked via reflection from Serial.
+ */
+public class Encoder extends PApplet
 {
   public Encoder(String iname, int irate)
   {
+    mOnNewEncoderValue = new DelegateList();
     mSerial = new Serial(this, iname, irate);
     mSerial.buffer(2);
   }
-
-  public void serialEvent(Serial p)
+  
+  public DelegateList onNewEncoderValue()
+  {
+    return mOnNewEncoderValue;
+  }
+  
+  void serialEvent(Serial p)
   {
     int msb = p.read();
     int lsb = p.read();
 
     int encoderValue = (msb << 8) | lsb;
+    mOnNewEncoderValue.invoke(encoderValue);
   }
 
   private Serial mSerial;
+  private DelegateList mOnNewEncoderValue;
 }
 
-Encoder myPort;
+Encoder sEncoder;
 int sEncoderValue = 0;
 
 void setup()
@@ -106,10 +244,12 @@ void setup()
     frame.setResizable(true);
   }
 
-  String portName = Serial.list()[0];
+  println(Serial.list());
+  String portName = Serial.list()[1];
   println(portName);
-
-  myPort = new Encoder(portName, 9600);
+  
+  sEncoder = new Encoder(portName, 9600);
+  sEncoder.onNewEncoderValue().addListener(this, "onNewEncoderValue");
 }
 
 boolean isSet(int value, int bit)
@@ -133,8 +273,7 @@ void draw()
   int kDiameter = (width - ((kNumBits - 1) * kBitSpacing)) / kNumBits;
 
   int kGraphicHeight = kDiameter;
-  int kGraphicWidth = (kDiameter * kNumBits) + (kBitSpacing * (kNumBits -
-1));
+  int kGraphicWidth = (kDiameter * kNumBits) + (kBitSpacing * (kNumBits - 1));
 
   int kStartY = (kDiameter / 2) + ((height - kGraphicHeight) / 2);
   int kStartX = (kDiameter / 2) + ((width - kGraphicWidth) / 2);
@@ -157,10 +296,8 @@ void draw()
   }
 }
 
-void serialEvent(Serial p)
+void onNewEncoderValue(int v)
 {
-  int msb = p.read();
-  int lsb = p.read();
-
-  sEncoderValue = (msb << 8) | lsb;
+  println("app.onNewEncoderValue(" + v + ")");
+  sEncoderValue = v;
 }
