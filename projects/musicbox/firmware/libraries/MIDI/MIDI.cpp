@@ -65,11 +65,11 @@ MIDI_Class::~MIDI_Class()
  - Input channel set to 1 if no value is specified
  - Full thru mirroring
  */
-void MIDI_Class::begin(const byte inChannel)
+void MIDI_Class::begin(const int baud, const byte inChannel)
 {
 	
 	// Initialise the Serial port
-	USE_SERIAL_PORT.begin(MIDI_BAUDRATE);
+	USE_SERIAL_PORT.begin(baud);
 	
 	
 #if COMPILE_MIDI_OUT

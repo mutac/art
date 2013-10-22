@@ -128,7 +128,7 @@ public:
 	~MIDI_Class();
 	
 	
-	void begin(const byte inChannel = 1);
+	void begin(const int baud = MIDI_BAUDRATE, const byte inChannel = 1);
 	
 	
 	
