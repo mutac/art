@@ -9,6 +9,8 @@
 // 5) Set LoopBe1 Internal output as an Input to Ableton
 //
 
+/**
+ */
 class MidiStream
 {
 public:
@@ -43,10 +45,12 @@ private:
   Stream& mStream;
 };
 
-class MusicBoxPip
+/**
+ */
+class Key
 {
 public:
-  static const int kMaxTime = 1000;
+  static const unsigned int kMaxTime = 1000;
   static const int kMinVelocity = 1;
   static const int kMaxVelocity = 128;
   
@@ -58,11 +62,11 @@ public:
   };
 
 public:
-  MusicBoxPip() :
+  Key() :
     mPin(0),
-    mVelocity(0),
     mWasOn(false),
-    mStartTime(0)
+    mStartTime(0),
+    mVelocity(0)
   {
   }
   
@@ -126,53 +130,142 @@ private:
   int mVelocity;
 };
 
+/**
+ */
+template <int KeyCount>
+class KeyWiring
+{
+public:
+  KeyWiring()
+  {
+  }
+  
+  void begin(const int pinFromKey[KeyCount])
+  {
+    for (int key = 0; key < KeyCount; key++)
+    {
+      mPinFromKey[key] = pinFromKey[key];
+    }
+  }
+  
+  int pin(int key)
+  {
+    return mPinFromKey[key];
+  }
+  
+private:
+  int mPinFromKey[KeyCount];
+};
+
+/**
+ */
+template <int KeyCount>
+class PitchMap
+{
+public:
+  PitchMap()
+  {
+  }
+  
+  void begin(byte startPitch, byte stopPitch)
+  {
+    for (int key = 0; key < KeyCount; key++)
+    {
+      mPitchMap[key] = map(key, 0, KeyCount - 1, startPitch, stopPitch);
+    }
+  }
+  
+  byte pitch(int key)
+  {
+    return mPitchMap[key];
+  }
+  
+private:
+  byte mPitchMap[KeyCount];
+};
+
+/**
+ */
+template <int KeyCount>
+class KeyBoard
+{
+public:
+  KeyBoard() :
+    mPitchMap(NULL),
+    mMidiStream(NULL)
+  {
+  }
+  
+  void begin(KeyWiring<KeyCount>& keyWiring, PitchMap<KeyCount>& pitchMap, MidiStream& stream)
+  {
+    mPitchMap = &pitchMap;
+    mMidiStream = &stream;
+    
+    for (int key = 0; key < KeyCount; key++)
+    {
+      mKey[key].begin(keyWiring.pin(key));
+    }
+  }
+  
+  int keyCount()
+  {
+    return KeyCount;
+  }
+  
+  void sample(int channel = 0)
+  {
+    for (int key = 0; key < KeyCount; key++)
+    {
+      Key::Transition transition = mKey[key].checkTransition();
+      
+      if (transition == Key::eTransitioned_On)
+      {
+        mMidiStream->sendNoteOn(channel, mPitchMap->pitch(key), mKey[key].transitionVelocity());
+      }
+      else if (transition == Key::eTransitioned_Off)
+      {
+        mMidiStream->sendNoteOff(channel, mPitchMap->pitch(key), mKey[key].transitionVelocity());
+      }
+    }
+  }
+  
+private:
+  Key mKey[KeyCount];
+  PitchMap<KeyCount>* mPitchMap;
+  MidiStream* mMidiStream;
+};
+
 //
 // Serial MIDI device:
 //  Baud: 9600
 //  Channel: 1
-
-MidiStream sMidiStream;
-
 static const int kMidiBaud = 9600;
 static const int kMidiChannel = 0;
 
 static const int kMidiNoteBegin = 52;
 static const int kMidiNoteEnd = 58;
 
-static const int kPipCount = 6;
-static MusicBoxPip sMusicBoxPips[kPipCount];
-static byte sPitchMap[kPipCount];
-static int sPinMap[] = {13, 12, 11, 10, 9, 8};
+#define kKeyCount 6
+
+static MidiStream sMidiStream;
+static KeyWiring<kKeyCount> sKeyWiring;
+static KeyBoard<kKeyCount> sKeyboard;
+static PitchMap<kKeyCount> sPitchMap;
 
 void setup()
 {
-  
-  // Seed pitch map table with something...
-  for (int pip = 0; pip < kPipCount; pip++)
-  {
-    sMusicBoxPips[pip].begin(sPinMap[pip]);
-    sPitchMap[pip] = map(pip, 0, kPipCount - 1, kMidiNoteBegin, kMidiNoteEnd);
-  }
+  int pins[kKeyCount] = {13, 12, 11, 10, 9, 8};
+  sKeyWiring.begin(pins);
   
   Serial.begin(kMidiBaud);
+  sPitchMap.begin(kMidiNoteBegin, kMidiNoteEnd);
   sMidiStream.begin(Serial);
+  sKeyboard.begin(sKeyWiring, sPitchMap, sMidiStream);
 }
 
 void loop()
 {
-  for (int pip = 0; pip < kPipCount; pip++)
-  {
-    MusicBoxPip::Transition transition = sMusicBoxPips[pip].checkTransition();
-    
-    if (transition == MusicBoxPip::eTransitioned_On)
-    {
-      sMidiStream.sendNoteOn(kMidiChannel, sPitchMap[pip], sMusicBoxPips[pip].transitionVelocity());
-    }
-    else if (transition == MusicBoxPip::eTransitioned_Off)
-    {
-      sMidiStream.sendNoteOff(kMidiChannel, sPitchMap[pip], sMusicBoxPips[pip].transitionVelocity());
-    }
-  }
+  sKeyboard.sample(kMidiChannel);
 }
 
 
