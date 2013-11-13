@@ -212,7 +212,7 @@ public:
     return KeyCount;
   }
   
-  void sample(int channel = 0)
+  void sampleKeys(int channel = 0)
   {
     for (int key = 0; key < KeyCount; key++)
     {
@@ -245,7 +245,7 @@ static const int kMidiChannel = 0;
 static const int kMidiNoteBegin = 52;
 static const int kMidiNoteEnd = 58;
 
-#define kKeyCount 6
+static const int kKeyCount = 6;
 
 static MidiStream sMidiStream;
 static KeyWiring<kKeyCount> sKeyWiring;
@@ -257,15 +257,17 @@ void setup()
   int pins[kKeyCount] = {13, 12, 11, 10, 9, 8};
   sKeyWiring.begin(pins);
   
-  Serial.begin(kMidiBaud);
   sPitchMap.begin(kMidiNoteBegin, kMidiNoteEnd);
+  
+  Serial.begin(kMidiBaud);
   sMidiStream.begin(Serial);
+  
   sKeyboard.begin(sKeyWiring, sPitchMap, sMidiStream);
 }
 
 void loop()
 {
-  sKeyboard.sample(kMidiChannel);
+  sKeyboard.sampleKeys(kMidiChannel);
 }
 
 
