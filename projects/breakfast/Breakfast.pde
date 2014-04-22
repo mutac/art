@@ -6,6 +6,7 @@
  * http://docs.oracle.com/javase/1.3/docs/guide/2d/spec/j2d-awt.fm6.html
  */
 
+
 import java.awt.*;
 import javax.swing.*;
 import gifAnimation.*;
